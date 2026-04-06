@@ -16,7 +16,18 @@
     },
     "web": {
       "bundler": "metro",
-      "output": "static"
+      "output": "static",
+      "favicon": "./assets/favicon.png",
+      "name": "AI Builder Platform",
+      "shortName": "AI Builder",
+      "description": "Build and deploy AI-powered applications",
+      "themeColor": "#6366f1",
+      "backgroundColor": "#0a0a0f",
+      "display": "standalone",
+      "orientation": "portrait",
+      "startUrl": "/",
+      "scope": "/",
+      "lang": "en"
     },
     "plugins": [
       "expo-router"
