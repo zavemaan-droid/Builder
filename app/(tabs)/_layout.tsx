@@ -1,7 +1,10 @@
 import { Tabs } from 'expo-router';
 import { MessageSquare, FolderCode, Bot, Lightbulb, Sparkles, Cpu, Settings } from 'lucide-react-native';
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function TabsLayout() {
+  const { isAdmin } = useAuth();
+
   return (
     <Tabs
       screenOptions={{
@@ -38,6 +41,7 @@ export default function TabsLayout() {
           tabBarIcon: ({ size, color }) => (
             <Sparkles size={size} color={color} />
           ),
+          href: isAdmin ? undefined : null,
         }}
       />
       <Tabs.Screen
@@ -47,6 +51,7 @@ export default function TabsLayout() {
           tabBarIcon: ({ size, color }) => (
             <Cpu size={size} color={color} />
           ),
+          href: isAdmin ? undefined : null,
         }}
       />
       <Tabs.Screen

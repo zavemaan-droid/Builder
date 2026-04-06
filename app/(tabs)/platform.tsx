@@ -28,7 +28,7 @@ import {
 type TabType = 'discoveries' | 'ideas' | 'auto-builds' | 'insights';
 
 export default function PlatformScreen() {
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, isAdmin } = useAuth();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<TabType>('discoveries');
   const [loading, setLoading] = useState(true);
@@ -40,10 +40,12 @@ export default function PlatformScreen() {
   useEffect(() => {
     if (!authLoading && !user) {
       router.replace('/auth');
-    } else if (user) {
+    } else if (!authLoading && user && !isAdmin) {
+      router.replace('/');
+    } else if (user && isAdmin) {
       loadData();
     }
-  }, [user, authLoading, activeTab]);
+  }, [user, authLoading, isAdmin, activeTab]);
 
   const loadData = async () => {
     setLoading(true);
@@ -87,6 +89,15 @@ export default function PlatformScreen() {
     return (
       <View style={styles.centerContainer}>
         <ActivityIndicator size="large" color="#3b82f6" />
+      </View>
+    );
+  }
+
+  if (!isAdmin) {
+    return (
+      <View style={styles.centerContainer}>
+        <Text style={styles.errorText}>Access Denied</Text>
+        <Text style={styles.errorSubtext}>Only administrators can access this page</Text>
       </View>
     );
   }
@@ -507,6 +518,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: '#0a0a0f',
+  },
+  errorText: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#ef4444',
+    marginBottom: 8,
+  },
+  errorSubtext: {
+    fontSize: 14,
+    color: '#6b7280',
   },
   header: {
     flexDirection: 'row',
