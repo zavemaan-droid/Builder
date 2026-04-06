@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'expo-router';
-import { Cpu, CircleAlert as AlertCircle, TrendingUp, Zap, Code, CircleArrowUp as ArrowUpCircle } from 'lucide-react-native';
+import { Cpu, CircleAlert as AlertCircle, TrendingUp, Zap, Code, CircleArrowUp as ArrowUpCircle, Sparkles, CircleCheck as CheckCircle, Play } from 'lucide-react-native';
 import {
   getPlatformHealth,
   getPlatformCritiques,
@@ -14,26 +14,28 @@ import {
   PlatformUpgradeProposal,
   MetaLearning,
 } from '@/services/selfUpgradeEngine';
+import {
+  getTopDiscoveries,
+  getCollaborativeIdeas,
+  getPendingAutoImprovements,
+  approveAutoImprovement,
+  getSystemInsights,
+  PatternDiscovery,
+  CollaborativeIdea,
+  AutoImprovement,
+} from '@/services/autonomousLearningService';
 
-type TabType = 'health' | 'critiques' | 'proposals' | 'learnings';
+type TabType = 'discoveries' | 'ideas' | 'auto-builds' | 'insights';
 
 export default function PlatformScreen() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<TabType>('health');
+  const [activeTab, setActiveTab] = useState<TabType>('discoveries');
   const [loading, setLoading] = useState(true);
-  const [health, setHealth] = useState({
-    version: 'v1.0.0',
-    total_critiques: 0,
-    critical_issues: 0,
-    pending_proposals: 0,
-    learnings_count: 0,
-    last_analysis: null as string | null,
-  });
-  const [critiques, setCritiques] = useState<ArchitectureCritique[]>([]);
-  const [proposals, setProposals] = useState<PlatformUpgradeProposal[]>([]);
-  const [learnings, setLearnings] = useState<MetaLearning[]>([]);
-  const [analysisHistory, setAnalysisHistory] = useState<any[]>([]);
+  const [insights, setInsights] = useState<any>(null);
+  const [discoveries, setDiscoveries] = useState<PatternDiscovery[]>([]);
+  const [ideas, setIdeas] = useState<CollaborativeIdea[]>([]);
+  const [autoImprovements, setAutoImprovements] = useState<AutoImprovement[]>([]);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -46,21 +48,18 @@ export default function PlatformScreen() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const healthData = await getPlatformHealth();
-      setHealth(healthData);
+      const insightsData = await getSystemInsights();
+      setInsights(insightsData);
 
-      if (activeTab === 'critiques') {
-        const critiqueData = await getPlatformCritiques();
-        setCritiques(critiqueData);
-      } else if (activeTab === 'proposals') {
-        const proposalData = await getPlatformProposals();
-        setProposals(proposalData);
-      } else if (activeTab === 'learnings') {
-        const learningData = await getMetaLearnings();
-        setLearnings(learningData);
-      } else if (activeTab === 'health') {
-        const historyData = await getAnalysisHistory();
-        setAnalysisHistory(historyData);
+      if (activeTab === 'discoveries') {
+        const discoveryData = await getTopDiscoveries(20);
+        setDiscoveries(discoveryData);
+      } else if (activeTab === 'ideas') {
+        const ideaData = await getCollaborativeIdeas();
+        setIdeas(ideaData);
+      } else if (activeTab === 'auto-builds') {
+        const improvementData = await getPendingAutoImprovements();
+        setAutoImprovements(improvementData);
       }
     } catch (error) {
       console.error('Error loading platform data:', error);
@@ -69,26 +68,19 @@ export default function PlatformScreen() {
     }
   };
 
-  const handleVote = async (proposalId: string, vote: number) => {
+  const handleApprove = async (improvementId: string) => {
     try {
-      await voteOnProposal(proposalId, vote);
+      await approveAutoImprovement(improvementId);
       loadData();
     } catch (error) {
-      console.error('Error voting:', error);
+      console.error('Error approving:', error);
     }
   };
 
-  const getSeverityColor = (severity: string) => {
-    switch (severity) {
-      case 'critical':
-        return '#ef4444';
-      case 'error':
-        return '#f59e0b';
-      case 'warning':
-        return '#eab308';
-      default:
-        return '#3b82f6';
-    }
+  const getSuccessColor = (rate: number) => {
+    if (rate >= 0.8) return '#10b981';
+    if (rate >= 0.6) return '#f59e0b';
+    return '#ef4444';
   };
 
   if (authLoading || loading) {
@@ -102,75 +94,269 @@ export default function PlatformScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Cpu size={24} color="#3b82f6" />
-        <Text style={styles.headerTitle}>Platform V2</Text>
-        <View style={styles.versionBadge}>
-          <Text style={styles.versionText}>{health.version}</Text>
-        </View>
+        <Sparkles size={24} color="#10b981" />
+        <Text style={styles.headerTitle}>Autonomous Learning</Text>
       </View>
 
-      <View style={styles.healthCards}>
-        <View style={styles.healthCard}>
-          <Code size={20} color="#3b82f6" />
-          <Text style={styles.healthValue}>{health.total_critiques}</Text>
-          <Text style={styles.healthLabel}>Issues</Text>
+      {insights && (
+        <View style={styles.healthCards}>
+          <View style={styles.healthCard}>
+            <CheckCircle size={20} color="#10b981" />
+            <Text style={styles.healthValue}>
+              {Math.round(insights.health.success_rate * 100)}%
+            </Text>
+            <Text style={styles.healthLabel}>Success</Text>
+          </View>
+          <View style={styles.healthCard}>
+            <Code size={20} color="#3b82f6" />
+            <Text style={styles.healthValue}>{insights.health.active_patterns}</Text>
+            <Text style={styles.healthLabel}>Patterns</Text>
+          </View>
+          <View style={styles.healthCard}>
+            <Sparkles size={20} color="#f59e0b" />
+            <Text style={styles.healthValue}>{insights.collaborative_ideas.length}</Text>
+            <Text style={styles.healthLabel}>Ideas</Text>
+          </View>
+          <View style={styles.healthCard}>
+            <Zap size={20} color="#a855f7" />
+            <Text style={styles.healthValue}>{insights.pending_improvements.length}</Text>
+            <Text style={styles.healthLabel}>Auto</Text>
+          </View>
         </View>
-        <View style={styles.healthCard}>
-          <AlertCircle size={20} color="#ef4444" />
-          <Text style={styles.healthValue}>{health.critical_issues}</Text>
-          <Text style={styles.healthLabel}>Critical</Text>
-        </View>
-        <View style={styles.healthCard}>
-          <ArrowUpCircle size={20} color="#10b981" />
-          <Text style={styles.healthValue}>{health.pending_proposals}</Text>
-          <Text style={styles.healthLabel}>Proposals</Text>
-        </View>
-        <View style={styles.healthCard}>
-          <Zap size={20} color="#f59e0b" />
-          <Text style={styles.healthValue}>{health.learnings_count}</Text>
-          <Text style={styles.healthLabel}>Learnings</Text>
-        </View>
-      </View>
+      )}
 
       <View style={styles.tabs}>
         <TouchableOpacity
-          style={[styles.tab, activeTab === 'health' && styles.tabActive]}
-          onPress={() => setActiveTab('health')}
+          style={[styles.tab, activeTab === 'discoveries' && styles.tabActive]}
+          onPress={() => setActiveTab('discoveries')}
         >
-          <Text style={[styles.tabText, activeTab === 'health' && styles.tabTextActive]}>
-            Health
+          <Text style={[styles.tabText, activeTab === 'discoveries' && styles.tabTextActive]}>
+            Discoveries
           </Text>
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[styles.tab, activeTab === 'critiques' && styles.tabActive]}
-          onPress={() => setActiveTab('critiques')}
+          style={[styles.tab, activeTab === 'ideas' && styles.tabActive]}
+          onPress={() => setActiveTab('ideas')}
         >
-          <Text style={[styles.tabText, activeTab === 'critiques' && styles.tabTextActive]}>
-            Critiques
+          <Text style={[styles.tabText, activeTab === 'ideas' && styles.tabTextActive]}>
+            Ideas
           </Text>
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[styles.tab, activeTab === 'proposals' && styles.tabActive]}
-          onPress={() => setActiveTab('proposals')}
+          style={[styles.tab, activeTab === 'auto-builds' && styles.tabActive]}
+          onPress={() => setActiveTab('auto-builds')}
         >
-          <Text style={[styles.tabText, activeTab === 'proposals' && styles.tabTextActive]}>
-            V2 Ideas
+          <Text style={[styles.tabText, activeTab === 'auto-builds' && styles.tabTextActive]}>
+            Auto-Build
           </Text>
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[styles.tab, activeTab === 'learnings' && styles.tabActive]}
-          onPress={() => setActiveTab('learnings')}
+          style={[styles.tab, activeTab === 'insights' && styles.tabActive]}
+          onPress={() => setActiveTab('insights')}
         >
-          <Text style={[styles.tabText, activeTab === 'learnings' && styles.tabTextActive]}>
-            Learnings
+          <Text style={[styles.tabText, activeTab === 'insights' && styles.tabTextActive]}>
+            Insights
           </Text>
         </TouchableOpacity>
       </View>
 
       <ScrollView style={styles.content}>
+        {activeTab === 'discoveries' && (
+          <View>
+            <Text style={styles.sectionTitle}>Pattern Discoveries</Text>
+            <Text style={styles.sectionSubtitle}>
+              What works and what doesn't - learned automatically
+            </Text>
+            {discoveries.map((discovery) => (
+              <View key={discovery.id} style={styles.discoveryCard}>
+                <View style={styles.discoveryHeader}>
+                  <Text style={styles.discoveryName}>{discovery.pattern_name}</Text>
+                  <View style={styles.rateContainer}>
+                    <Text
+                      style={[
+                        styles.successRate,
+                        { color: getSuccessColor(discovery.success_rate) },
+                      ]}
+                    >
+                      {Math.round(discovery.success_rate * 100)}%
+                    </Text>
+                  </View>
+                </View>
+                <Text style={styles.discoveryDescription}>{discovery.description}</Text>
+
+                {discovery.works_well_for.length > 0 && (
+                  <View style={styles.worksBox}>
+                    <Text style={styles.worksLabel}>Works well for:</Text>
+                    {discovery.works_well_for.map((item, idx) => (
+                      <Text key={idx} style={styles.worksItem}>✓ {item}</Text>
+                    ))}
+                  </View>
+                )}
+
+                {discovery.fails_for.length > 0 && (
+                  <View style={styles.failsBox}>
+                    <Text style={styles.failsLabel}>Avoid for:</Text>
+                    {discovery.fails_for.map((item, idx) => (
+                      <Text key={idx} style={styles.failsItem}>✗ {item}</Text>
+                    ))}
+                  </View>
+                )}
+
+                <View style={styles.discoveryFooter}>
+                  <Text style={styles.usageCount}>Used {discovery.usage_count}x</Text>
+                  <Text style={styles.confidenceText}>
+                    {Math.round(discovery.confidence_score * 100)}% confident
+                  </Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
+
+        {activeTab === 'ideas' && (
+          <View>
+            <Text style={styles.sectionTitle}>Collaborative Ideas</Text>
+            <Text style={styles.sectionSubtitle}>
+              AI synthesized from multiple successful patterns
+            </Text>
+            {ideas.map((idea) => (
+              <View key={idea.id} style={styles.ideaCard}>
+                <View style={styles.ideaHeader}>
+                  <Text style={styles.ideaType}>{idea.idea_type}</Text>
+                  {idea.implementation_ready && (
+                    <View style={styles.readyBadge}>
+                      <CheckCircle size={14} color="#10b981" />
+                      <Text style={styles.readyText}>Ready</Text>
+                    </View>
+                  )}
+                </View>
+                <Text style={styles.ideaTitle}>{idea.title}</Text>
+                <Text style={styles.ideaDescription}>{idea.description}</Text>
+
+                <View style={styles.synthesizedBox}>
+                  <Text style={styles.synthesizedLabel}>Synthesized from:</Text>
+                  <Text style={styles.synthesizedText}>
+                    {idea.synthesized_from.length} patterns
+                  </Text>
+                </View>
+
+                <View style={styles.ideaFooter}>
+                  <Text style={styles.ideaConfidence}>
+                    {Math.round(idea.confidence_score * 100)}% confidence
+                  </Text>
+                  <Text style={styles.ideaStatus}>{idea.status}</Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
+
+        {activeTab === 'auto-builds' && (
+          <View>
+            <Text style={styles.sectionTitle}>Auto-Build Queue</Text>
+            <Text style={styles.sectionSubtitle}>
+              System-generated improvements ready to implement
+            </Text>
+            {autoImprovements.map((improvement) => (
+              <View key={improvement.id} style={styles.autoCard}>
+                <View style={styles.autoHeader}>
+                  <Text style={styles.autoCategory}>{improvement.improvement_category}</Text>
+                  <View
+                    style={[
+                      styles.statusBadge,
+                      {
+                        backgroundColor:
+                          improvement.execution_status === 'pending'
+                            ? '#f59e0b20'
+                            : '#10b98120',
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.statusText,
+                        {
+                          color:
+                            improvement.execution_status === 'pending'
+                              ? '#f59e0b'
+                              : '#10b981',
+                        },
+                      ]}
+                    >
+                      {improvement.execution_status}
+                    </Text>
+                  </View>
+                </View>
+                <Text style={styles.autoTitle}>{improvement.title}</Text>
+                <Text style={styles.autoDescription}>{improvement.description}</Text>
+
+                <View style={styles.rationaleBox}>
+                  <Text style={styles.rationaleLabel}>Why:</Text>
+                  <Text style={styles.rationaleText}>{improvement.rationale}</Text>
+                </View>
+
+                <View style={styles.autoFooter}>
+                  <Text style={styles.autoConfidence}>
+                    {Math.round(improvement.confidence_score * 100)}% confident
+                  </Text>
+                  {improvement.requires_approval && (
+                    <TouchableOpacity
+                      style={styles.approveButton}
+                      onPress={() => handleApprove(improvement.id)}
+                    >
+                      <Play size={14} color="#fff" />
+                      <Text style={styles.approveText}>Approve</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
+
+        {activeTab === 'insights' && insights && (
+          <View>
+            <Text style={styles.sectionTitle}>System Insights</Text>
+            <Text style={styles.sectionSubtitle}>
+              Real-time learning from entire platform ecosystem
+            </Text>
+
+            <View style={styles.insightCard}>
+              <Text style={styles.insightTitle}>Platform Health</Text>
+              <Text style={styles.insightValue}>
+                {Math.round(insights.health.success_rate * 100)}% Success Rate
+              </Text>
+              <Text style={styles.insightSubtext}>
+                From {insights.health.total_builds} builds
+              </Text>
+            </View>
+
+            <View style={styles.insightCard}>
+              <Text style={styles.insightTitle}>Top Discoveries</Text>
+              {insights.top_discoveries.map((d: PatternDiscovery, idx: number) => (
+                <View key={idx} style={styles.quickItem}>
+                  <Text style={styles.quickName}>{d.pattern_name}</Text>
+                  <Text style={styles.quickRate}>
+                    {Math.round(d.success_rate * 100)}%
+                  </Text>
+                </View>
+              ))}
+            </View>
+
+            <View style={styles.insightCard}>
+              <Text style={styles.insightTitle}>Recent Collaborative Ideas</Text>
+              {insights.collaborative_ideas.map((i: CollaborativeIdea, idx: number) => (
+                <Text key={idx} style={styles.quickIdea}>
+                  • {i.title}
+                </Text>
+              ))}
+            </View>
+          </View>
+        )}
+
         {activeTab === 'health' && (
           <View>
             <Text style={styles.sectionTitle}>Self-Analysis History</Text>
@@ -306,50 +492,6 @@ export default function PlatformScreen() {
           </View>
         )}
 
-        {activeTab === 'learnings' && (
-          <View>
-            <Text style={styles.sectionTitle}>Meta Learnings</Text>
-            <Text style={styles.sectionSubtitle}>
-              What the platform learned from its own evolution
-            </Text>
-            {learnings.map((learning) => (
-              <View key={learning.id} style={styles.learningCard}>
-                <View style={styles.learningHeader}>
-                  <Text style={styles.learningType}>{learning.learning_type}</Text>
-                  <Text style={styles.learningConfidence}>
-                    {Math.round(learning.confidence_score * 100)}%
-                  </Text>
-                </View>
-                <Text style={styles.learningContext}>{learning.context}</Text>
-
-                <View style={styles.learningContent}>
-                  <View style={styles.learningSection}>
-                    <Text style={styles.learningSectionTitle}>What Worked:</Text>
-                    <Text style={styles.learningSectionText}>{learning.what_worked}</Text>
-                  </View>
-
-                  {learning.what_didnt_work && (
-                    <View style={styles.learningSection}>
-                      <Text style={styles.learningSectionTitle}>What Didn't:</Text>
-                      <Text style={styles.learningSectionText}>
-                        {learning.what_didnt_work}
-                      </Text>
-                    </View>
-                  )}
-
-                  <View style={styles.learningSection}>
-                    <Text style={styles.learningSectionTitle}>Why:</Text>
-                    <Text style={styles.learningSectionText}>{learning.why}</Text>
-                  </View>
-                </View>
-
-                <Text style={styles.validationCount}>
-                  Validated {learning.times_validated} times
-                </Text>
-              </View>
-            ))}
-          </View>
-        )}
       </ScrollView>
     </View>
   );
@@ -674,6 +816,272 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     color: '#10b981',
+  },
+  discoveryCard: {
+    backgroundColor: '#1a1a24',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#2a2a3a',
+  },
+  discoveryHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  discoveryName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#3b82f6',
+    fontFamily: 'monospace',
+  },
+  rateContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  successRate: {
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  discoveryDescription: {
+    fontSize: 14,
+    color: '#9ca3af',
+    lineHeight: 20,
+    marginBottom: 12,
+  },
+  worksBox: {
+    backgroundColor: '#10b98110',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  worksLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#10b981',
+    marginBottom: 6,
+  },
+  worksItem: {
+    fontSize: 13,
+    color: '#10b981',
+    lineHeight: 20,
+  },
+  failsBox: {
+    backgroundColor: '#ef444410',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  failsLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#ef4444',
+    marginBottom: 6,
+  },
+  failsItem: {
+    fontSize: 13,
+    color: '#ef4444',
+    lineHeight: 20,
+  },
+  discoveryFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 8,
+  },
+  usageCount: {
+    fontSize: 12,
+    color: '#6b7280',
+  },
+  confidenceText: {
+    fontSize: 12,
+    color: '#6b7280',
+  },
+  ideaCard: {
+    backgroundColor: '#1a1a24',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#2a2a3a',
+  },
+  ideaHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  ideaType: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#f59e0b',
+    textTransform: 'uppercase',
+  },
+  readyBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#10b98120',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    gap: 4,
+  },
+  readyText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#10b981',
+  },
+  ideaTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginBottom: 8,
+  },
+  ideaDescription: {
+    fontSize: 14,
+    color: '#9ca3af',
+    lineHeight: 20,
+    marginBottom: 12,
+  },
+  synthesizedBox: {
+    backgroundColor: '#0a0a0f',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 12,
+  },
+  synthesizedLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#6b7280',
+    marginBottom: 4,
+  },
+  synthesizedText: {
+    fontSize: 13,
+    color: '#9ca3af',
+  },
+  ideaFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  ideaConfidence: {
+    fontSize: 12,
+    color: '#6b7280',
+  },
+  ideaStatus: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#3b82f6',
+    textTransform: 'uppercase',
+  },
+  autoCard: {
+    backgroundColor: '#1a1a24',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#2a2a3a',
+  },
+  autoHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  autoCategory: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#a855f7',
+    textTransform: 'uppercase',
+  },
+  statusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  statusText: {
+    fontSize: 11,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+  },
+  autoTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginBottom: 8,
+  },
+  autoDescription: {
+    fontSize: 14,
+    color: '#9ca3af',
+    lineHeight: 20,
+    marginBottom: 12,
+  },
+  autoFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  autoConfidence: {
+    fontSize: 12,
+    color: '#6b7280',
+  },
+  approveButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#10b981',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+    gap: 4,
+  },
+  approveText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#fff',
+  },
+  insightCard: {
+    backgroundColor: '#1a1a24',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#2a2a3a',
+  },
+  insightTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#fff',
+    marginBottom: 8,
+  },
+  insightValue: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#10b981',
+    marginBottom: 4,
+  },
+  insightSubtext: {
+    fontSize: 12,
+    color: '#6b7280',
+  },
+  quickItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: '#2a2a3a',
+  },
+  quickName: {
+    fontSize: 13,
+    color: '#9ca3af',
+    fontFamily: 'monospace',
+  },
+  quickRate: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#10b981',
+  },
+  quickIdea: {
+    fontSize: 13,
+    color: '#9ca3af',
+    lineHeight: 20,
   },
   learningCard: {
     backgroundColor: '#1a1a24',
