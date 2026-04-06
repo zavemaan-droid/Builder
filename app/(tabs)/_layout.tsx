@@ -1,5 +1,5 @@
 import { Tabs } from 'expo-router';
-import { MessageSquare, FolderCode, Bot, Lightbulb, Sparkles, Settings } from 'lucide-react-native';
+import { MessageSquare, FolderCode, Bot, Lightbulb, Sparkles, Cpu, Settings } from 'lucide-react-native';
 
 export default function TabsLayout() {
   return (
@@ -37,6 +37,15 @@ export default function TabsLayout() {
           title: 'Upgrades',
           tabBarIcon: ({ size, color }) => (
             <Sparkles size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="platform"
+        options={{
+          title: 'Platform',
+          tabBarIcon: ({ size, color }) => (
+            <Cpu size={size} color={color} />
           ),
         }}
       />
