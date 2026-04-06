@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Alert, Linking } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Alert, Linking, Switch } from 'react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'expo-router';
-import { Settings as SettingsIcon, Key, LogOut, ExternalLink, Sparkles } from 'lucide-react-native';
+import { Settings as SettingsIcon, Key, LogOut, ExternalLink, Sparkles, Shield, Database } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { PROVIDER_INFO, AIProvider } from '@/services/aiService';
+import { getMemorySettings, updateMemorySettings, getStorageUsage, formatBytes, MemorySettings } from '@/services/memorySync';
 
 export default function SettingsScreen() {
   const { user, signOut } = useAuth();
@@ -12,6 +13,13 @@ export default function SettingsScreen() {
   const [apiKey, setApiKey] = useState('');
   const [selectedProvider, setSelectedProvider] = useState<AIProvider>('openrouter');
   const [saved, setSaved] = useState(false);
+  const [memorySettings, setMemorySettings] = useState<MemorySettings>({
+    sharePatterns: false,
+    shareLearnings: false,
+    shareAnonymousUsage: true,
+    keepLocalBackup: true,
+  });
+  const [storageUsage, setStorageUsage] = useState({ local: 0, cloud: 0 });
 
   useEffect(() => {
     loadSettings();
@@ -22,6 +30,18 @@ export default function SettingsScreen() {
     const provider = await AsyncStorage.getItem('ai_provider') as AIProvider;
     if (key) setApiKey(key);
     if (provider) setSelectedProvider(provider);
+
+    const memSettings = await getMemorySettings();
+    setMemorySettings(memSettings);
+
+    const usage = await getStorageUsage();
+    setStorageUsage(usage);
+  };
+
+  const toggleMemorySetting = async (key: keyof MemorySettings) => {
+    const updated = { ...memorySettings, [key]: !memorySettings[key] };
+    setMemorySettings(updated);
+    await updateMemorySettings(updated);
   };
 
   const saveSettings = async () => {
@@ -123,10 +143,80 @@ export default function SettingsScreen() {
           </View>
         </View>
 
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Privacy & Sharing</Text>
+          <Text style={styles.sectionDescription}>
+            Control what gets shared to help the community learn.
+          </Text>
+
+          <View style={styles.card}>
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>Share Code Patterns</Text>
+                <Text style={styles.settingDescription}>
+                  Help others by sharing reusable code patterns
+                </Text>
+              </View>
+              <Switch
+                value={memorySettings.sharePatterns}
+                onValueChange={() => toggleMemorySetting('sharePatterns')}
+                trackColor={{ false: '#2a2a3a', true: '#3b82f660' }}
+                thumbColor={memorySettings.sharePatterns ? '#3b82f6' : '#6b7280'}
+              />
+            </View>
+
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>Share Agent Learnings</Text>
+                <Text style={styles.settingDescription}>
+                  Anonymous insights that help agents improve
+                </Text>
+              </View>
+              <Switch
+                value={memorySettings.shareLearnings}
+                onValueChange={() => toggleMemorySetting('shareLearnings')}
+                trackColor={{ false: '#2a2a3a', true: '#3b82f660' }}
+                thumbColor={memorySettings.shareLearnings ? '#3b82f6' : '#6b7280'}
+              />
+            </View>
+
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>Anonymous Usage Stats</Text>
+                <Text style={styles.settingDescription}>
+                  Help improve the platform (no personal data)
+                </Text>
+              </View>
+              <Switch
+                value={memorySettings.shareAnonymousUsage}
+                onValueChange={() => toggleMemorySetting('shareAnonymousUsage')}
+                trackColor={{ false: '#2a2a3a', true: '#3b82f660' }}
+                thumbColor={memorySettings.shareAnonymousUsage ? '#3b82f6' : '#6b7280'}
+              />
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Storage</Text>
+          <View style={styles.card}>
+            <View style={styles.storageRow}>
+              <Shield size={18} color="#3b82f6" />
+              <Text style={styles.storageLabel}>Local (Private)</Text>
+              <Text style={styles.storageValue}>{formatBytes(storageUsage.local)}</Text>
+            </View>
+            <View style={styles.storageRow}>
+              <Database size={18} color="#10b981" />
+              <Text style={styles.storageLabel}>Cloud (Shared)</Text>
+              <Text style={styles.storageValue}>{formatBytes(storageUsage.cloud)}</Text>
+            </View>
+          </View>
+        </View>
+
         <View style={styles.infoBox}>
           <Sparkles size={20} color="#3b82f6" />
           <Text style={styles.infoText}>
-            Your API key is stored locally and never sent to our servers. It's only used to communicate directly with your chosen AI provider.
+            Your API key and private data stay on your device. Only patterns and learnings you choose to share go to the cloud.
           </Text>
         </View>
       </ScrollView>
@@ -292,6 +382,46 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     marginRight: 4,
+  },
+  settingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#2a2a3a',
+  },
+  settingInfo: {
+    flex: 1,
+    marginRight: 12,
+  },
+  settingLabel: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#fff',
+    marginBottom: 4,
+  },
+  settingDescription: {
+    fontSize: 13,
+    color: '#6b7280',
+  },
+  storageRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#2a2a3a',
+  },
+  storageLabel: {
+    flex: 1,
+    fontSize: 15,
+    color: '#fff',
+    marginLeft: 12,
+  },
+  storageValue: {
+    fontSize: 14,
+    color: '#3b82f6',
+    fontWeight: '600',
   },
   infoBox: {
     flexDirection: 'row',

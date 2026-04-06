@@ -1,5 +1,5 @@
 import { Tabs } from 'expo-router';
-import { MessageSquare, FolderCode, Bot, Settings } from 'lucide-react-native';
+import { MessageSquare, FolderCode, Bot, Lightbulb, Sparkles, Settings } from 'lucide-react-native';
 
 export default function TabsLayout() {
   return (
@@ -28,6 +28,24 @@ export default function TabsLayout() {
           title: 'Projects',
           tabBarIcon: ({ size, color }) => (
             <FolderCode size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="upgrades"
+        options={{
+          title: 'Upgrades',
+          tabBarIcon: ({ size, color }) => (
+            <Sparkles size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="community"
+        options={{
+          title: 'Community',
+          tabBarIcon: ({ size, color }) => (
+            <Lightbulb size={size} color={color} />
           ),
         }}
       />

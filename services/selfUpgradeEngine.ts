@@ -1,4 +1,5 @@
 import { sendMessage, AIMessage, AIConfig } from './aiService';
+import { getSharedLearnings, getPublicPatterns, getTrendingKnowledge } from './knowledgeService';
 
 export interface CodeFile {
   path: string;
@@ -25,6 +26,7 @@ const SYSTEM_PROMPT = `You are an expert full-stack developer and AI coding assi
 3. Write clean, maintainable code
 4. Include proper error handling
 5. Optimize for the target platform
+6. Learn from community knowledge and patterns
 
 When generating code:
 - Return ONLY valid code, no explanations in code blocks
@@ -32,6 +34,7 @@ When generating code:
 - Follow React Native and Expo best practices
 - Ensure code is Android-compatible (SDK 55)
 - Include all necessary imports
+- Apply relevant community patterns and learnings when available
 
 Format your response as JSON:
 {
@@ -50,6 +53,8 @@ export async function generateCode(
   config: AIConfig
 ): Promise<UpgradeResult> {
   try {
+    const userPrompt = await buildPrompt(request);
+
     const messages: AIMessage[] = [
       {
         role: 'system',
@@ -57,7 +62,7 @@ export async function generateCode(
       },
       {
         role: 'user',
-        content: buildPrompt(request),
+        content: userPrompt,
       },
     ];
 
@@ -85,11 +90,45 @@ export async function generateCode(
   }
 }
 
-function buildPrompt(request: UpgradeRequest): string {
+async function buildPrompt(request: UpgradeRequest): Promise<string> {
   let prompt = `Generate code for: ${request.description}\n\n`;
 
   if (request.targetPlatform) {
     prompt += `Target Platform: ${request.targetPlatform}\n\n`;
+  }
+
+  try {
+    const [learnings, patterns, knowledge] = await Promise.all([
+      getSharedLearnings().catch(() => []),
+      getPublicPatterns('react-native').catch(() => []),
+      getTrendingKnowledge().catch(() => []),
+    ]);
+
+    if (learnings.length > 0) {
+      prompt += `Community Learnings (apply if relevant):\n`;
+      learnings.slice(0, 3).forEach(l => {
+        prompt += `- ${l.context}: ${l.solution}\n`;
+      });
+      prompt += '\n';
+    }
+
+    if (patterns.length > 0) {
+      prompt += `Available Patterns:\n`;
+      patterns.slice(0, 3).forEach(p => {
+        prompt += `- ${p.name}: ${p.description}\n`;
+      });
+      prompt += '\n';
+    }
+
+    if (knowledge.length > 0) {
+      prompt += `Community Knowledge:\n`;
+      knowledge.slice(0, 2).forEach(k => {
+        prompt += `- ${k.title}: ${k.description}\n`;
+      });
+      prompt += '\n';
+    }
+  } catch (error) {
+    console.log('Could not fetch community data, proceeding without it');
   }
 
   if (request.currentFiles && request.currentFiles.length > 0) {
