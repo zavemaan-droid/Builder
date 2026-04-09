@@ -21,7 +21,7 @@
       "name": "AI Builder Platform",
       "shortName": "AI Builder",
       "description": "Build and deploy AI-powered applications",
-      "themeColor": "#6366f1",
+      "themeColor": "#3b82f6",
       "backgroundColor": "#0a0a0f",
       "display": "standalone",
       "orientation": "portrait",

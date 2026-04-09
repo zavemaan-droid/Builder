@@ -41,7 +41,7 @@ export default function TabsLayout() {
           tabBarIcon: ({ size, color }) => (
             <Sparkles size={size} color={color} />
           ),
-          href: isAdmin ? undefined : null,
+          href: isAdmin ? '/upgrades' : null,
         }}
       />
       <Tabs.Screen
@@ -51,7 +51,7 @@ export default function TabsLayout() {
           tabBarIcon: ({ size, color }) => (
             <Cpu size={size} color={color} />
           ),
-          href: isAdmin ? undefined : null,
+          href: isAdmin ? '/platform' : null,
         }}
       />
       <Tabs.Screen
