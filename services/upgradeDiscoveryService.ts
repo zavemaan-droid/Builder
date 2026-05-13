@@ -16,6 +16,39 @@ export interface UpgradeProposal {
   created_at: string;
 }
 
+// ─── Robust JSON extractor ───────────────────────────────────────────────
+// Handles markdown code fences, Java/TS code blocks, and AI preamble text.
+// Fixes the crash that occurred when AI returned code blocks in its response.
+function extractJSON(text: string): any {
+  const stripped = text
+    .replace(/```(?:json|javascript|typescript|js|ts|java|python|\w+)?\n?/gi, '')
+    .replace(/```/g, '');
+
+  let depth = 0;
+  let start = -1;
+  let inString = false;
+  let escape = false;
+
+  for (let i = 0; i < stripped.length; i++) {
+    const ch = stripped[i];
+    if (escape) { escape = false; continue; }
+    if (ch === '\\' && inString) { escape = true; continue; }
+    if (ch === '"') { inString = !inString; continue; }
+    if (inString) continue;
+
+    if (ch === '{') {
+      if (depth === 0) start = i;
+      depth++;
+    } else if (ch === '}') {
+      depth--;
+      if (depth === 0 && start !== -1) {
+        try { return JSON.parse(stripped.slice(start, i + 1)); } catch { start = -1; }
+      }
+    }
+  }
+  throw new Error('No valid JSON found in AI response. Raw: ' + text.slice(0, 500));
+}
+
 const UPGRADE_DISCOVERY_PROMPT = `You are an AI that discovers code improvements and upgrades. Your job is to:
 1. Analyze existing code for improvement opportunities
 2. Research latest best practices and patterns
@@ -70,21 +103,21 @@ export async function discoverUpgrades(
 
   if (learnings.length > 0) {
     userPrompt += '\nCommunity Learnings:\n';
-    learnings.slice(0, 5).forEach(l => {
+    learnings.slice(0, 5).forEach((l: any) => {
       userPrompt += `- ${l.context}: ${l.solution} (Success rate: ${l.success_rate})\n`;
     });
   }
 
   if (patterns.length > 0) {
     userPrompt += '\nProven Patterns:\n';
-    patterns.slice(0, 5).forEach(p => {
+    patterns.slice(0, 5).forEach((p: any) => {
       userPrompt += `- ${p.name}: ${p.description}\n`;
     });
   }
 
   if (knowledge.length > 0) {
     userPrompt += '\nTrending Knowledge:\n';
-    knowledge.slice(0, 5).forEach(k => {
+    knowledge.slice(0, 5).forEach((k: any) => {
       userPrompt += `- ${k.title}: ${k.description}\n`;
     });
   }
@@ -96,15 +129,11 @@ export async function discoverUpgrades(
 
   const response = await sendMessage(messages, config);
 
-  const jsonMatch = response.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) {
-    throw new Error('Invalid response format');
-  }
-
-  const result = JSON.parse(jsonMatch[0]);
+  // ✅ FIXED: use robust extractor instead of fragile regex
+  const result = extractJSON(response);
   const proposals: UpgradeProposal[] = [];
 
-  for (const proposal of result.proposals) {
+  for (const proposal of result.proposals || []) {
     const { data, error } = await supabase
       .from('upgrade_proposals')
       .insert({
@@ -157,82 +186,46 @@ export async function getProposalHistory(projectId: string): Promise<UpgradeProp
   return data || [];
 }
 
-export async function approveProposal(
-  proposalId: string,
-  reason: string = ''
-): Promise<void> {
+export async function approveProposal(proposalId: string, reason: string = ''): Promise<void> {
   const userId = (await supabase.auth.getUser()).data.user?.id;
-
   await supabase
     .from('upgrade_proposals')
-    .update({
-      status: 'approved',
-      reviewed_at: new Date().toISOString(),
-    })
+    .update({ status: 'approved', reviewed_at: new Date().toISOString() })
     .eq('id', proposalId);
-
   await supabase.from('upgrade_history').insert({
-    proposal_id: proposalId,
-    user_id: userId,
-    action: 'approved',
-    reason,
+    proposal_id: proposalId, user_id: userId, action: 'approved', reason,
   });
 }
 
-export async function rejectProposal(
-  proposalId: string,
-  reason: string
-): Promise<void> {
+export async function rejectProposal(proposalId: string, reason: string): Promise<void> {
   const userId = (await supabase.auth.getUser()).data.user?.id;
-
   await supabase
     .from('upgrade_proposals')
-    .update({
-      status: 'rejected',
-      reviewed_at: new Date().toISOString(),
-    })
+    .update({ status: 'rejected', reviewed_at: new Date().toISOString() })
     .eq('id', proposalId);
-
   await supabase.from('upgrade_history').insert({
-    proposal_id: proposalId,
-    user_id: userId,
-    action: 'rejected',
-    reason,
+    proposal_id: proposalId, user_id: userId, action: 'rejected', reason,
   });
 }
 
 export async function applyProposal(proposalId: string): Promise<void> {
   const userId = (await supabase.auth.getUser()).data.user?.id;
-
   await supabase
     .from('upgrade_proposals')
-    .update({
-      status: 'applied',
-      applied_at: new Date().toISOString(),
-    })
+    .update({ status: 'applied', applied_at: new Date().toISOString() })
     .eq('id', proposalId);
-
   await supabase.from('upgrade_history').insert({
-    proposal_id: proposalId,
-    user_id: userId,
-    action: 'applied',
-    reason: 'Upgrade successfully applied',
+    proposal_id: proposalId, user_id: userId,
+    action: 'applied', reason: 'Upgrade successfully applied',
   });
 }
 
-export async function scheduleAutoDiscovery(
-  projectId: string,
-  intervalHours: number = 24
-): Promise<void> {
+export async function scheduleAutoDiscovery(projectId: string, intervalHours: number = 24): Promise<void> {
   console.log(`Auto-discovery scheduled for project ${projectId} every ${intervalHours} hours`);
 }
 
 export async function getUpgradeStats(userId: string): Promise<{
-  pending: number;
-  approved: number;
-  rejected: number;
-  applied: number;
-  approval_rate: number;
+  pending: number; approved: number; rejected: number; applied: number; approval_rate: number;
 }> {
   const { data, error } = await supabase
     .from('upgrade_proposals')
@@ -241,23 +234,15 @@ export async function getUpgradeStats(userId: string): Promise<{
 
   if (error) throw error;
 
-  const stats = {
-    pending: 0,
-    approved: 0,
-    rejected: 0,
-    applied: 0,
-    approval_rate: 0,
-  };
-
-  data?.forEach(proposal => {
-    if (proposal.status === 'pending') stats.pending++;
-    if (proposal.status === 'approved') stats.approved++;
-    if (proposal.status === 'rejected') stats.rejected++;
-    if (proposal.status === 'applied') stats.applied++;
+  const stats = { pending: 0, approved: 0, rejected: 0, applied: 0, approval_rate: 0 };
+  data?.forEach(p => {
+    if (p.status === 'pending')  stats.pending++;
+    if (p.status === 'approved') stats.approved++;
+    if (p.status === 'rejected') stats.rejected++;
+    if (p.status === 'applied')  stats.applied++;
   });
 
   const total = stats.approved + stats.rejected;
   stats.approval_rate = total > 0 ? (stats.approved / total) * 100 : 0;
-
   return stats;
 }
