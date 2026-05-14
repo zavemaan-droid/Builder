@@ -49,59 +49,6 @@ export interface LearningSignal {
   learned_insights: any[];
 }
 
-// ─── Robust JSON extractor ────────────────────────────────────────────────
-// Handles markdown code fences, nested objects, and AI preamble text.
-// Fixes crashes caused by code blocks in AI responses.
-function extractJSON(text: string): any {
-  const stripped = text
-    .replace(/```(?:json|javascript|typescript|js|ts|java|python|\w+)?\n?/gi, '')
-    .replace(/```/g, '');
-
-  let depth = 0;
-  let start = -1;
-  let inString = false;
-  let escape = false;
-
-  for (let i = 0; i < stripped.length; i++) {
-    const ch = stripped[i];
-    if (escape) { escape = false; continue; }
-    if (ch === '\\' && inString) { escape = true; continue; }
-    if (ch === '"') { inString = !inString; continue; }
-    if (inString) continue;
-
-    if (ch === '{') {
-      if (depth === 0) start = i;
-      depth++;
-    } else if (ch === '}') {
-      depth--;
-      if (depth === 0 && start !== -1) {
-        try { return JSON.parse(stripped.slice(start, i + 1)); } catch { start = -1; }
-      }
-    }
-  }
-  throw new Error('No valid JSON found in AI response. Raw: ' + text.slice(0, 500));
-}
-
-// ─── Memory dedup: check if a collaborative idea already exists ───────────
-async function ideaExists(title: string): Promise<boolean> {
-  const { data } = await supabase
-    .from('collaborative_ideas')
-    .select('id')
-    .ilike('title', title)
-    .limit(1);
-  return (data?.length ?? 0) > 0;
-}
-
-// ─── Memory dedup: check if an auto-improvement already exists ────────────
-async function improvementExists(title: string): Promise<boolean> {
-  const { data } = await supabase
-    .from('auto_improvements')
-    .select('id')
-    .ilike('title', title)
-    .limit(1);
-  return (data?.length ?? 0) > 0;
-}
-
 const DISCOVERY_PROMPT = `You are an autonomous learning AI that discovers what works and what doesn't across an entire platform ecosystem.
 
 Your job is to:
@@ -202,16 +149,19 @@ export async function runAutonomousDiscovery(
   ];
 
   const response = await sendMessage(messages, config);
+  const jsonMatch = response.match(/\{[\s\S]*\}/);
 
-  // ✅ FIXED: use robust extractor instead of fragile regex
-  const analysis = extractJSON(response);
+  if (!jsonMatch) {
+    throw new Error('Invalid discovery response');
+  }
+
+  const analysis = JSON.parse(jsonMatch[0]);
 
   const discoveries: PatternDiscovery[] = [];
   const ideas: CollaborativeIdea[] = [];
   const improvements: AutoImprovement[] = [];
 
   for (const discovery of analysis.discoveries || []) {
-    // pattern_discoveries uses upsert on pattern_name — already safe from duplicates
     const { data } = await supabase
       .from('pattern_discoveries')
       .upsert(
@@ -233,10 +183,6 @@ export async function runAutonomousDiscovery(
   }
 
   for (const idea of analysis.collaborative_ideas || []) {
-    // ✅ FIXED: deduplicate before inserting collaborative ideas
-    const exists = await ideaExists(idea.title);
-    if (exists) continue;
-
     const { data } = await supabase
       .from('collaborative_ideas')
       .insert({
@@ -256,10 +202,6 @@ export async function runAutonomousDiscovery(
   }
 
   for (const improvement of analysis.auto_improvements || []) {
-    // ✅ FIXED: deduplicate before inserting auto improvements
-    const exists = await improvementExists(improvement.title);
-    if (exists) continue;
-
     const { data } = await supabase
       .from('auto_improvements')
       .insert({
@@ -321,7 +263,10 @@ export async function getPendingAutoImprovements(): Promise<AutoImprovement[]> {
 export async function approveAutoImprovement(improvementId: string): Promise<void> {
   await supabase
     .from('auto_improvements')
-    .update({ execution_status: 'approved', requires_approval: false })
+    .update({
+      execution_status: 'approved',
+      requires_approval: false,
+    })
     .eq('id', improvementId);
 }
 
@@ -336,7 +281,10 @@ export async function executeAutoImprovement(improvementId: string): Promise<any
 
   await supabase
     .from('auto_improvements')
-    .update({ execution_status: 'executing', executed_at: new Date().toISOString() })
+    .update({
+      execution_status: 'executing',
+      executed_at: new Date().toISOString(),
+    })
     .eq('id', improvementId);
 
   try {
@@ -347,7 +295,10 @@ export async function executeAutoImprovement(improvementId: string): Promise<any
 
     await supabase
       .from('auto_improvements')
-      .update({ execution_status: 'completed', outcome: result })
+      .update({
+        execution_status: 'completed',
+        outcome: result,
+      })
       .eq('id', improvementId);
 
     await recordLearningSignal({
@@ -388,7 +339,8 @@ export async function implementCollaborativeIdea(
   const messages: AIMessage[] = [
     {
       role: 'system',
-      content: 'You are a code implementation AI. Generate complete, production-ready code based on the plan.',
+      content:
+        'You are a code implementation AI. Generate complete, production-ready code based on the plan.',
     },
     {
       role: 'user',
@@ -397,13 +349,20 @@ export async function implementCollaborativeIdea(
   ];
 
   const response = await sendMessage(messages, config);
+  const jsonMatch = response.match(/\{[\s\S]*\}/);
 
-  // ✅ FIXED: use robust extractor instead of fragile regex
-  const implementation = extractJSON(response);
+  if (!jsonMatch) {
+    throw new Error('Invalid implementation response');
+  }
+
+  const implementation = JSON.parse(jsonMatch[0]);
 
   await supabase
     .from('collaborative_ideas')
-    .update({ status: 'implemented', implemented_at: new Date().toISOString() })
+    .update({
+      status: 'implemented',
+      implemented_at: new Date().toISOString(),
+    })
     .eq('id', ideaId);
 
   return implementation;
@@ -411,20 +370,41 @@ export async function implementCollaborativeIdea(
 
 async function aggregateSystemData(): Promise<any> {
   const [metrics, signals, patterns] = await Promise.all([
-    supabase.from('success_metrics').select('*').order('recorded_at', { ascending: false }).limit(100),
-    supabase.from('learning_signals').select('*').eq('processed', true).order('created_at', { ascending: false }).limit(100),
-    supabase.from('pattern_discoveries').select('*').order('confidence_score', { ascending: false }).limit(50),
+    supabase
+      .from('success_metrics')
+      .select('*')
+      .order('recorded_at', { ascending: false })
+      .limit(100),
+    supabase
+      .from('learning_signals')
+      .select('*')
+      .eq('processed', true)
+      .order('created_at', { ascending: false })
+      .limit(100),
+    supabase
+      .from('pattern_discoveries')
+      .select('*')
+      .order('confidence_score', { ascending: false })
+      .limit(50),
   ]);
 
   const successRate =
     metrics.data?.filter((m) => m.metric_name === 'build-success').length /
       (metrics.data?.length || 1) || 0;
 
+  const commonPatterns = patterns.data
+    ?.filter((p) => p.success_rate > 0.7)
+    .map((p) => p.pattern_name);
+
+  const failurePatterns = patterns.data
+    ?.filter((p) => p.failure_rate > 0.5)
+    .map((p) => p.pattern_name);
+
   return {
     overall_success_rate: successRate,
     total_builds: metrics.data?.length || 0,
-    successful_patterns: patterns.data?.filter((p) => p.success_rate > 0.7).map((p) => p.pattern_name) || [],
-    problematic_patterns: patterns.data?.filter((p) => p.failure_rate > 0.5).map((p) => p.pattern_name) || [],
+    successful_patterns: commonPatterns || [],
+    problematic_patterns: failurePatterns || [],
     recent_signals: signals.data?.slice(0, 20) || [],
     top_patterns: patterns.data?.slice(0, 10) || [],
   };
@@ -432,10 +412,13 @@ async function aggregateSystemData(): Promise<any> {
 
 function extractPatterns(metadata: any): string[] {
   const patterns: string[] = [];
+
   if (metadata.framework) patterns.push(`framework-${metadata.framework}`);
   if (metadata.language) patterns.push(`lang-${metadata.language}`);
-  if (metadata.dependencies) patterns.push(...metadata.dependencies.map((d: string) => `dep-${d}`));
+  if (metadata.dependencies)
+    patterns.push(...metadata.dependencies.map((d: string) => `dep-${d}`));
   if (metadata.error_type) patterns.push(`error-${metadata.error_type}`);
+
   return patterns;
 }
 

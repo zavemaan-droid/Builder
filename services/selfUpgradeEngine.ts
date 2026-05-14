@@ -54,42 +54,9 @@ export interface MetaLearning {
   times_validated: number;
 }
 
-// ─── Robust JSON extractor ────────────────────────────────────────────────
-// Handles markdown code fences, nested objects, and AI preamble text.
-// Replaces the fragile response.match(/{[\s\S]*}/) which breaks on code blocks.
-function extractJSON(text: string): any {
-  const stripped = text
-    .replace(/```(?:json|javascript|typescript|js|ts|java|python|\w+)?\n?/gi, '')
-    .replace(/```/g, '');
-
-  let depth = 0;
-  let start = -1;
-  let inString = false;
-  let escape = false;
-
-  for (let i = 0; i < stripped.length; i++) {
-    const ch = stripped[i];
-    if (escape) { escape = false; continue; }
-    if (ch === '\\' && inString) { escape = true; continue; }
-    if (ch === '"') { inString = !inString; continue; }
-    if (inString) continue;
-
-    if (ch === '{') {
-      if (depth === 0) start = i;
-      depth++;
-    } else if (ch === '}') {
-      depth--;
-      if (depth === 0 && start !== -1) {
-        try { return JSON.parse(stripped.slice(start, i + 1)); } catch { start = -1; }
-      }
-    }
-  }
-  throw new Error('No valid JSON found in AI response. Raw:\n' + text.slice(0, 500));
-}
-
 const SELF_ANALYSIS_PROMPT = `You are a meta-AI architect whose ONLY job is to analyze and improve the AI Builder Platform itself.
 
-You are NOT building user apps. You are analyzing the platform\'s own:
+You are NOT building user apps. You are analyzing the platform's own:
 - Architecture and design patterns
 - Service organization and modularity
 - Database schema efficiency
@@ -156,17 +123,6 @@ export async function getCurrentVersion(): Promise<PlatformVersion> {
   return data;
 }
 
-// ─── Dedup helper: check if a learning already exists ────────────────────
-async function learningExists(context: string, whatWorked: string): Promise<boolean> {
-  const { data } = await supabase
-    .from('meta_learnings')
-    .select('id')
-    .eq('context', context)
-    .eq('what_worked', whatWorked)
-    .limit(1);
-  return (data?.length ?? 0) > 0;
-}
-
 export async function runSelfAnalysis(
   platformCode: string,
   config: AIConfig
@@ -201,9 +157,13 @@ export async function runSelfAnalysis(
     ];
 
     const response = await sendMessage(messages, config);
+    const jsonMatch = response.match(/\{[\s\S]*\}/);
 
-    // ✅ FIXED: use robust extractor instead of fragile regex
-    const analysis = extractJSON(response);
+    if (!jsonMatch) {
+      throw new Error('Invalid analysis response');
+    }
+
+    const analysis = JSON.parse(jsonMatch[0]);
 
     const critiques: ArchitectureCritique[] = [];
     const learnings: MetaLearning[] = [];
@@ -231,10 +191,6 @@ export async function runSelfAnalysis(
     }
 
     for (const learning of analysis.learnings || []) {
-      // ✅ FIXED: deduplicate before inserting
-      const exists = await learningExists(learning.context, learning.what_worked);
-      if (exists) continue;
-
       const { data } = await supabase
         .from('meta_learnings')
         .insert({
@@ -354,7 +310,9 @@ export async function voteOnProposal(proposalId: string, vote: number): Promise<
 
   await supabase
     .from('platform_upgrade_proposals')
-    .update({ community_votes: (proposal.community_votes || 0) + vote })
+    .update({
+      community_votes: (proposal.community_votes || 0) + vote,
+    })
     .eq('id', proposalId);
 }
 
@@ -366,7 +324,12 @@ export async function createNewVersion(
 
   const { data, error } = await supabase
     .from('platform_versions')
-    .insert({ version_number: versionNumber, architecture_snapshot: {}, key_features: [], is_stable: false })
+    .insert({
+      version_number: versionNumber,
+      architecture_snapshot: {},
+      key_features: [],
+      is_stable: false,
+    })
     .select()
     .single();
 
@@ -375,7 +338,10 @@ export async function createNewVersion(
   for (const proposalId of implementedProposals) {
     await supabase
       .from('platform_upgrade_proposals')
-      .update({ status: 'implemented', implemented_at: new Date().toISOString() })
+      .update({
+        status: 'implemented',
+        implemented_at: new Date().toISOString(),
+      })
       .eq('id', proposalId);
   }
 
@@ -402,6 +368,8 @@ function getNextVersion(currentVersion: string): string {
   const parts = currentVersion.replace('v', '').split('.');
   const major = parseInt(parts[0]);
   const minor = parseInt(parts[1]);
+  const patch = parseInt(parts[2]);
+
   return `v${major}.${minor + 1}.0`;
 }
 
